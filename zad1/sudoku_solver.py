@@ -1,8 +1,9 @@
 #script (python)
 
-import clingo
-import string
 import os
+import string
+
+import clingo
 
 
 def read_file(path, cc):
@@ -10,15 +11,15 @@ def read_file(path, cc):
         for i, line in enumerate(f):
             if i == 0:
                 size = int(line.strip().split(' ')[0])
-                x = [[None] * size for _ in range(size)]
+                board = [[None] * size for _ in range(size)]
             else:
                 for j, elem in enumerate(line.strip().split(' ')):
                     if elem != '0':
-                        x[i - 1][j] = elem.lower()
+                        board[i - 1][j] = elem.lower()
                         comm = 'number({i}, {j}, {n}) .'.format(i=i - 1, j=j, n=elem.lower())
                         cc.add('base', [], comm)
 
-    return x, size
+    return board, size
 
 
 def setup_clingo():
@@ -66,60 +67,65 @@ def add_main_clingo_program(cc, size):
         cc.add('base', [], 'row({}) .'.format(i))
         cc.add('base', [], 'col({}) .'.format(i))
 
+
+def print_on_screen(board, sqrt_size):
+    for i, row in enumerate(board):
+        if i % sqrt_size == 0:
+            for _ in range(len(row) + sqrt_size + 1):
+                print('-', end=' ')
+        print('')
+        for j, col in enumerate(row):
+            if j % sqrt_size == 0:
+                print('|', sep='', end=' ')
+            print(col, end=' ')
+        print('|')
+    for _ in range(sqrt_size * sqrt_size + sqrt_size + 1):
+        print('-', end=' ')
+    print()
+
+
+def save_to_file(size, board, output_path):
+    if output_path:
+        with open(output_path, 'w') as f:
+            print(size, file=f)
+            for row in board:
+                print(*row, sep=' ', end=' ', file=f)
+            print(file=f)
+
+
+def update_solution(model, board):
+    for atom in model.symbols(atoms=True):
+        if atom.name == 'number':
+            args = [str(z) for z in atom.arguments]
+            board[int(args[0])][int(args[1])] = args[2]
+
+
 def run():
     cc = setup_clingo()
 
     path = os.environ['SUDOKU_PATH']
-    x, size = read_file(path, cc)
+    output_path = os.environ.get('OUTPUT_PATH')
+    board, size = read_file(path, cc)
+    sqrt_size = int(size ** 0.5)
 
     add_main_clingo_program(cc, size)
 
-    cc.ground([("base",[])])
+    cc.ground([("base", [])])
 
-    def onmodel(m):
-        print('SATISFIABLE')
-        for atom in m.symbols(atoms=True):
-            if atom.name == 'number':
-                args = [str(z) for z in atom.arguments]
-                x[int(args[0])][int(args[1])] = args[2]
-        for row in x:
-            print(*row, sep='', end='')
+    def on_model(m):
+        print('Result: SATISFIABLE')
+        update_solution(m, board)
+        print_on_screen(board, sqrt_size)
+        save_to_file(size, board, output_path)
 
-        print()
-        check(x, size, int(size**0.5))
-
-    res = cc.solve(on_model=onmodel)
+    res = cc.solve(on_model=on_model)
     if res.unsatisfiable:
-        print('UNSATISFIABLE')
-
-def check(solution, size, sqrt_size):
-    for row in solution:
-        if len(set(row)) != size:
-            print("Not valid solution in row", row)
-            return
-    cols = [[solution[i][j] for i in range(size)] for j in range(size)]
-
-    for col in cols:
-        if len(set(col)) != size:
-            print("Not valid solution in column", col)
-            return
-
-    boxes = [
-        [solution[i + i_shift * 3][j + j_shift * 3] for j in range(sqrt_size) for i in range(sqrt_size)]
-        for i_shift in range(sqrt_size) for j_shift in range(sqrt_size)
-    ]
-    for box in boxes:
-        if len(set(box)) != size:
-            print("Not valid solution in box", box)
-            return
-
-    print("Solution is valid")
+        print('Result: UNSATISFIABLE')
 
 
 if __name__ == '__main__':
     print('\n===== PYTHON RUN STARTS HERE =====\n')
     run()
     print('\n====== PYTHON RUN ENDS HERE ======\n')
-
 
 #end.
